@@ -7,13 +7,10 @@ void Test(){
 
 int main() {
     using namespace sss;
-    ThreadPool pool(4);
-    for (int i = 0; i < 100; i++)
-        pool.Submit(std::function<void()>(Test));
-//    auto res = pool.Submit(Test);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-//    if (res.valid()){
-//        std::cout << "Job Finish !" << std::endl;
-//    }
+    std::queue<int> queue;
+    queue.push(2);
+    auto rvalue = std::move(queue.front());
+    std::cout << queue.front();
+    std::future<void> f;
     return 0;
 }

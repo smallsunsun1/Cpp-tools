@@ -4,31 +4,46 @@
 
 #include "stl_thread_pool.h"
 
-namespace sss{
+namespace sss {
 
 thread_local unsigned ThreadPool::my_index_;
-thread_local WorkStealingQueue* ThreadPool::local_work_queue_ = nullptr;
+thread_local bool* ThreadPool::request_stop_ = new bool(true);
+thread_local WorkStealingQueue *ThreadPool::local_work_queue_;
 
 void ThreadPool::WorkerThread(unsigned my_index) {
     my_index_ = my_index;
     local_work_queue_ = queues_[my_index_].get();
-    while (!done_) {
+    request_stop_ = request_signals_[my_index_].get();
+    while (!done_ && !(*request_stop_)) {
         RunPendingTask();
+    }
+    while (!local_work_queue_->Empty()) {
+        Task task;
+        local_work_queue_->TryPop(task);
     }
 }
 
 bool ThreadPool::PopTaskFromLocalQueue(sss::ThreadPool::Task &task) {
-    return local_work_queue_ && local_work_queue_->TryPop(task);
+    bool res = local_work_queue_ && local_work_queue_->TryPop(task);
+//    if (res) {
+//        std::cout << "ThreadPool::PopTaskFromLocalQueue" << std::endl;
+//    }
+    return res;
 }
 
 bool ThreadPool::PopTaskFromPoolQueue(sss::ThreadPool::Task &task) {
-    return pool_work_queue_.TryPop(task);
+    bool res = pool_work_queue_.TryPop(task);
+//    if (res) {
+//        std::cout << "ThreadPool::PopTaskFromPoolQueue" << std::endl;
+//    }
+    return res;
 }
 
 bool ThreadPool::PopTaskFromOtherThreadQueue(sss::ThreadPool::Task &task) {
     for (unsigned int i = 0; i < queues_.size(); ++i) {
         unsigned const index = (my_index_ + i + 1) % queues_.size();
-        if (queues_[index]->TrySteal(task)){
+        if (queues_[index]->TrySteal(task)) {
+//            std::cout << "ThreadPool::PopTaskFromOtherThreadQueue" << std::endl;
             return true;
         }
     }
@@ -37,24 +52,29 @@ bool ThreadPool::PopTaskFromOtherThreadQueue(sss::ThreadPool::Task &task) {
 
 void ThreadPool::RunPendingTask() {
     Task task;
-    if (PopTaskFromLocalQueue(task) || PopTaskFromPoolQueue(task) || PopTaskFromOtherThreadQueue(task)){
+    if (PopTaskFromLocalQueue(task) || PopTaskFromPoolQueue(task) || PopTaskFromOtherThreadQueue(task)) {
         task();
     } else {
         std::this_thread::yield();
     }
 }
 
-//template <typename FunctionType>
-//std::future<typename std::result_of<FunctionType()>::type> ThreadPool::Submit(FunctionType f) {
-//    using result_type = typename std::result_of<FunctionType()>::type;
-//    std::packaged_task<result_type()> task(f);
-//    std::future<result_type> res(task.get_future());
-//    if (local_work_queue_) {
-//        local_work_queue_->Push(std::move(task));
-//    } else {
-//        pool_work_queue_.Push(std::move(task));
-//    }
-//    return res;
+void ThreadPool::Cancel() { done_ = true; }
+
+//bool ThreadPool::StartNewThread(){
+//    request_signals_.push_back(std::make_unique<bool>(false));
+//    queues_.push_back(std::unique_ptr<WorkStealingQueue>(new WorkStealingQueue));
+//    threads_.push_back(std::thread(&ThreadPool::WorkerThread, this, num_threads_));
+//    num_threads_ += 1;
+//    return true;
+//}
+//bool ThreadPool::CancelThread() {
+//    *request_signals_.back() = true;
+//    while (threads_.back().joinable()){}
+//    threads_.pop_back();
+//    request_signals_.pop_back();
+//    num_threads_--;
+//    return true;
 //}
 
 }

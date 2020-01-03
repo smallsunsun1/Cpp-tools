@@ -44,9 +44,9 @@ class FunctionWrapper {
 template<typename T>
 class ThreadSafeQueue {
  public:
-  bool TryPop(T& t){
+  bool TryPop(T &t) {
       std::lock_guard<std::mutex> lock(mu_);
-      if (queue_.empty()){
+      if (queue_.empty()) {
           return false;
       }
       t = std::move(queue_.front());
@@ -57,11 +57,11 @@ class ThreadSafeQueue {
       std::lock_guard<std::mutex> lock(mu_);
       return queue_.empty();
   }
-  void Push(T&& t) {
+  void Push(T &&t) {
       std::lock_guard<std::mutex> lock(mu_);
       queue_.push(std::move(t));
   }
-  void Push(T& t){
+  void Push(T &t) {
       std::lock_guard<std::mutex> lock(mu_);
       queue_.push(std::move(t));
   }
@@ -73,22 +73,86 @@ class ThreadSafeQueue {
 class WorkStealingQueue {
  public:
   using data_type = FunctionWrapper;
-  WorkStealingQueue(){}
+  WorkStealingQueue() {}
   void Push(data_type data);
   bool Empty() const;
-  bool TryPop(data_type& res);
-  bool TrySteal(data_type& res);
+  bool TryPop(data_type &res);
+  size_t Size() const;
+  bool TrySteal(data_type &res);
  private:
   DISALLOW_COPY_AND_ASSIGN(WorkStealingQueue);
   std::deque<data_type> the_queue_;
   mutable std::mutex mu_;
 };
 
-
-
-template <typename T>
+template<typename T>
 class NonBlockingThreadSafeQueue {
 
+};
+
+template<typename T>
+class LockFreeStack {
+ public:
+  void Push(const T &data) {
+      Node *new_node = new Node(data);
+      new_node->next = head_.load();
+      while (!head_.compare_exchange_weak(new_node->next, new_node));
+  }
+  std::shared_ptr<T> Pop() {
+      ++threads_in_pop_;
+      Node *old_head = head_.load();
+      while (old_head && !head_.compare_exchange_weak(old_head, old_head->next));
+      std::shared_ptr<T> res;
+      if (old_head) {
+          res.swap(old_head->data);
+      }
+      TryReclaim(old_head);  // 回收对应节点
+      return res;
+  }
+ private:
+  struct Node {
+    std::shared_ptr<T> data;
+    Node *next;
+    Node(const T &data_) : data(std::make_shared<T>(data_)) {}
+  };
+  static void DeleteNodes(Node *nodes) {
+      while (nodes) {
+          Node *next = nodes->next;
+          delete nodes;
+          nodes = next;
+      }
+  }
+  void ChainPendingNodes(Node* first, Node* last){
+      last->next = to_be_deleted_;
+      while (!to_be_deleted_.compare_exchange_weak(last->next, first));
+  }
+  void ChainPendingNodes(Node *nodes) {
+      Node* last = nodes;
+      while (Node* next = last->next) {
+          last = next;
+      }
+      ChainPendingNodes(nodes, last);
+  }
+  void ChainPendingNode(Node* n){
+      ChainPendingNodes(n, n);
+  }
+  void TryReclaim(Node *old_head) {
+      if (threads_in_pop_ == 1) {
+          Node *nodes_to_delete = to_be_deleted_.exchange(nullptr);
+          if (!--threads_in_pop_) {
+              DeleteNodes(nodes_to_delete);
+          } else if (nodes_to_delete){
+              ChainPendingNodes(nodes_to_delete);
+          }
+          delete old_head;
+      } else {
+          ChainPendingNode(old_head);
+          --threads_in_pop_;
+      }
+  }
+  std::atomic<unsigned> threads_in_pop_;
+  std::atomic<Node *> head_;
+  std::atomic<Node *> to_be_deleted_;
 };
 
 }

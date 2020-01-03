@@ -36,5 +36,10 @@ bool WorkStealingQueue::TrySteal(sss::WorkStealingQueue::data_type & res) {
     return true;
 }
 
+size_t WorkStealingQueue::Size() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return the_queue_.size();
+}
+
 }
 

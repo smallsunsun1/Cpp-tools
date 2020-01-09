@@ -48,18 +48,21 @@ class ThreadPool {
   bool CancelThread();
   void Cancel();
 
-  template<typename FunctionType>
-  std::future<typename std::result_of<FunctionType()>::type> Submit(FunctionType f) {
-      using result_type = typename std::result_of<FunctionType()>::type;
-      std::packaged_task<result_type()> task(f);
+  template<typename FunctionType, typename... Args>
+  std::future<typename std::result_of<FunctionType(Args...)>::type> Submit(FunctionType f, Args...args) {
+      using result_type = typename std::result_of<FunctionType(Args...)>::type;
+      auto func = std::bind(std::forward<FunctionType>(f), std::forward<Args>(args)...);
+      std::packaged_task<result_type()> task(func);
       std::future<result_type> res(task.get_future());
       if (!pool_work_queue_.Empty()) {
 //          std::cout << "local queue" << std::endl;
           int indices = dis_(mt_);
           queues_[indices].get()->Push(std::move(task));
+//            queues_[indices].get()->Push([&task]{task();});
       } else {
 //          std::cout << "here we are" << std::endl;
           pool_work_queue_.Push(std::move(task));
+//            pool_work_queue_.Push([&task]{task();});
       }
       return res;
   }
@@ -75,7 +78,7 @@ class ThreadPool {
   std::vector<std::unique_ptr<bool>> request_signals_;
   static thread_local WorkStealingQueue *local_work_queue_;
   static thread_local unsigned my_index_;
-  static thread_local bool* request_stop_;
+  static thread_local bool *request_stop_;
   std::atomic<bool> done_;
   std::random_device dev_;
   std::uniform_int_distribution<> dis_;

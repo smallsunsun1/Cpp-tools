@@ -74,7 +74,8 @@ class WorkStealingQueue {
  public:
   using data_type = FunctionWrapper;
   WorkStealingQueue() {}
-  void Push(data_type data);
+  void Push(data_type& data);
+  void Push(data_type&& data);
   bool Empty() const;
   bool TryPop(data_type &res);
   size_t Size() const;

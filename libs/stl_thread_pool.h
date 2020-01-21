@@ -5,6 +5,7 @@
 #ifndef TOOLS_STL_THREAD_POOL_H
 #define TOOLS_STL_THREAD_POOL_H
 
+#include <memory>
 #include <thread>
 #include <future>
 #include <iostream>
@@ -19,9 +20,9 @@ class JoinThreads {
  public:
   explicit JoinThreads(std::vector<std::thread> &threads) : threads_(threads) {}
   ~JoinThreads() {
-      for (int i = 0; i < threads_.size(); ++i) {
-          if (threads_[i].joinable()) {
-              threads_[i].join();
+      for (auto & thread : threads_) {
+          if (thread.joinable()) {
+              thread.join();
           }
       }
   }
@@ -32,44 +33,44 @@ class JoinThreads {
 class ThreadPool {
  public:
   using Task = FunctionWrapper;
-  ThreadPool(int num_threads) : done_(false), mt_(dev_()), num_threads_(num_threads), joiner(threads_) {
+  explicit ThreadPool(int num_threads) : done_(false), mt_(dev_()), num_threads_(num_threads), joiner(threads_) {
       for (unsigned i = 0; i < num_threads_; ++i) {
           request_signals_.push_back((std::make_unique<bool>(false)));
-          queues_.push_back(std::unique_ptr<WorkStealingQueue>(new WorkStealingQueue));
-          threads_.push_back(std::thread(&ThreadPool::WorkerThread, this, i));
+          queues_.push_back(std::make_unique<WorkStealingQueue>());
+          threads_.emplace_back(&ThreadPool::WorkerThread, this, i);
       }
-      queues_.push_back(std::unique_ptr<WorkStealingQueue>(new WorkStealingQueue));
+      queues_.push_back(std::make_unique<WorkStealingQueue>());
       request_signals_.push_back((std::make_unique<bool>(false)));
       local_work_queue_ = queues_.back().get();
-      dis_ = std::move(std::uniform_int_distribution<>(0, queues_.size() - 1));
+      dis_ = std::uniform_int_distribution<>(0, queues_.size() - 1);
   }
   ~ThreadPool() { done_ = true; }
-  bool StartNewThread();
-  bool CancelThread();
   void Cancel();
 
   template<typename FunctionType, typename... Args>
   std::future<typename std::result_of<FunctionType(Args...)>::type> Submit(FunctionType f, Args...args) {
-      using result_type = typename std::result_of<FunctionType(Args...)>::type;
+    using result_type = typename std::result_of<FunctionType(Args...)>::type;
+    std::future<result_type> res;
+    {
+      std::unique_lock<std::mutex> unique_lock(mu_);
       auto func = std::bind(std::forward<FunctionType>(f), std::forward<Args>(args)...);
       std::packaged_task<result_type()> task(func);
-      std::future<result_type> res(task.get_future());
+      res = std::move(task.get_future());
       if (!pool_work_queue_.Empty()) {
-//          std::cout << "local queue" << std::endl;
-          int indices = dis_(mt_);
-          queues_[indices].get()->Push(std::move(task));
-//            queues_[indices].get()->Push([&task]{task();});
+        int indices = dis_(mt_);
+        queues_[indices].get()->Push(std::move(task));
       } else {
-//          std::cout << "here we are" << std::endl;
-          pool_work_queue_.Push(std::move(task));
-//            pool_work_queue_.Push([&task]{task();});
+        pool_work_queue_.Push(std::move(task));
       }
+      num_jobs_.fetch_add(1);
+    }
+      cv_.notify_one();
       return res;
   }
  private:
   void WorkerThread(unsigned my_index);
   void RunPendingTask();
-  bool PopTaskFromLocalQueue(Task &task);
+  static bool PopTaskFromLocalQueue(Task &task);
   bool PopTaskFromPoolQueue(Task &task);
   bool PopTaskFromOtherThreadQueue(Task &task);
   int num_threads_;
@@ -80,9 +81,12 @@ class ThreadPool {
   static thread_local unsigned my_index_;
   static thread_local bool *request_stop_;
   std::atomic<bool> done_;
+  std::atomic<int> num_jobs_;
   std::random_device dev_;
   std::uniform_int_distribution<> dis_;
   std::mt19937 mt_;
+  std::mutex mu_;
+  std::condition_variable cv_;
   std::vector<std::thread> threads_;
   JoinThreads joiner;
 };

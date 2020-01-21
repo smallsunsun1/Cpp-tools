@@ -17,25 +17,15 @@ void ThreadPool::WorkerThread(unsigned my_index) {
     while (!done_ && !(*request_stop_)) {
         RunPendingTask();
     }
-    while (!local_work_queue_->Empty()) {
-        Task task;
-        local_work_queue_->TryPop(task);
-    }
 }
 
 bool ThreadPool::PopTaskFromLocalQueue(sss::ThreadPool::Task &task) {
     bool res = local_work_queue_ && local_work_queue_->TryPop(task);
-//    if (res) {
-//        std::cout << "ThreadPool::PopTaskFromLocalQueue" << std::endl;
-//    }
     return res;
 }
 
 bool ThreadPool::PopTaskFromPoolQueue(sss::ThreadPool::Task &task) {
     bool res = pool_work_queue_.TryPop(task);
-//    if (res) {
-//        std::cout << "ThreadPool::PopTaskFromPoolQueue" << std::endl;
-//    }
     return res;
 }
 
@@ -43,7 +33,6 @@ bool ThreadPool::PopTaskFromOtherThreadQueue(sss::ThreadPool::Task &task) {
     for (unsigned int i = 0; i < queues_.size(); ++i) {
         unsigned const index = (my_index_ + i + 1) % queues_.size();
         if (queues_[index]->TrySteal(task)) {
-//            std::cout << "ThreadPool::PopTaskFromOtherThreadQueue" << std::endl;
             return true;
         }
     }
@@ -55,7 +44,13 @@ void ThreadPool::RunPendingTask() {
     if (PopTaskFromLocalQueue(task) || PopTaskFromPoolQueue(task) || PopTaskFromOtherThreadQueue(task)) {
         task();
     } else {
-        std::this_thread::yield();
+        std::unique_lock<std::mutex> unique_lock(mu_);
+        if (num_jobs_.load() == 0){
+          cv_.wait(unique_lock);
+        } else {
+          unique_lock.unlock();
+          std::this_thread::yield();
+        }
     }
 }
 

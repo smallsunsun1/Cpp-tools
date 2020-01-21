@@ -15,13 +15,10 @@ namespace sss {
 class FunctionWrapper {
  public:
   template<typename F>
-  FunctionWrapper(F &&f):impl_(std::make_unique<ImplType < F>>
-  (
-  std::move(f)
-  )) {}
+  FunctionWrapper(F &&f):impl_(std::make_unique<ImplType < F>>(std::forward<F>(f))) {}
   void operator()() { impl_->call(); }
   FunctionWrapper() = default;
-  FunctionWrapper(FunctionWrapper &&other) : impl_(std::move(other.impl_)) {}
+  FunctionWrapper(FunctionWrapper &&other) noexcept : impl_(std::move(other.impl_)) {}
   FunctionWrapper &operator=(FunctionWrapper &&other) {
       impl_ = std::move(other.impl_);
       return *this;
@@ -30,7 +27,7 @@ class FunctionWrapper {
   DISALLOW_COPY_AND_ASSIGN(FunctionWrapper);
   struct ImplBase {
     virtual void call() = 0;
-    virtual ~ImplBase() {}
+    virtual ~ImplBase() = default;
   };
   std::unique_ptr<ImplBase> impl_;
   template<typename F>
@@ -73,7 +70,7 @@ class ThreadSafeQueue {
 class WorkStealingQueue {
  public:
   using data_type = FunctionWrapper;
-  WorkStealingQueue() {}
+  WorkStealingQueue() = default;
   void Push(data_type& data);
   void Push(data_type&& data);
   bool Empty() const;
@@ -114,7 +111,7 @@ class LockFreeStack {
   struct Node {
     std::shared_ptr<T> data;
     Node *next;
-    Node(const T &data_) : data(std::make_shared<T>(data_)) {}
+    explicit Node(const T &data_) : data(std::make_shared<T>(data_)) {}
   };
   static void DeleteNodes(Node *nodes) {
       while (nodes) {

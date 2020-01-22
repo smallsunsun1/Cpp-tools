@@ -11,7 +11,8 @@ namespace sss {
 thread_local unsigned ThreadPool::my_index_;
 thread_local bool* ThreadPool::request_stop_;
 thread_local WorkStealingQueue *ThreadPool::local_work_queue_;
-const int ThreadPool::kMaxThreads = std::thread::hardware_concurrency() * 2;
+const unsigned ThreadPool::kMaxThreads = std::thread::hardware_concurrency() * 2;
+const unsigned ThreadPool::kMaxPoolSize = std::thread::hardware_concurrency() * 2;
 
 void ThreadPool::WorkerThread(unsigned my_index) {
     my_index_ = my_index;

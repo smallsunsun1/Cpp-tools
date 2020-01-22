@@ -50,6 +50,10 @@ class ThreadSafeQueue {
       queue_.pop();
       return true;
   }
+  unsigned long Size() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return queue_.size();
+  }
   bool Empty() const {
       std::lock_guard<std::mutex> lock(mu_);
       return queue_.empty();

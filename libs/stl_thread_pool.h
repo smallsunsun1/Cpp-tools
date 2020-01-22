@@ -33,7 +33,8 @@ class JoinThreads {
 class ThreadPool {
  public:
   using Task = FunctionWrapper;
-  static const int kMaxThreads;
+  static const unsigned kMaxThreads;
+  static const unsigned kMaxPoolSize;
   explicit ThreadPool(int num_threads)
       : done_(false), mt_(dev_()), num_threads_(num_threads), joiner(threads_), num_jobs_(0),
       queue_size_(0){
@@ -73,8 +74,8 @@ class ThreadPool {
       auto func = std::bind(std::forward<FunctionType>(f), std::forward<Args>(args)...);
       std::packaged_task<result_type()> task(func);
       res = std::move(task.get_future());
-      if (!pool_work_queue_.Empty()) {
-        int indices = dis_(mt_) % queue_size_.load();
+      if (pool_work_queue_.Size() > kMaxPoolSize) {
+        unsigned indices = dis_(mt_) % queue_size_.load();
         queues_[indices].get()->Push(std::move(task));
       } else {
         pool_work_queue_.Push(std::move(task));

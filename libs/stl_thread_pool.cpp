@@ -33,10 +33,9 @@ bool ThreadPool::PopTaskFromPoolQueue(sss::ThreadPool::Task &task) {
 }
 
 bool ThreadPool::PopTaskFromOtherThreadQueue(sss::ThreadPool::Task &task) {
-    int queue_size = queue_size_.load();
-    for (unsigned int i = 0; i < queue_size; ++i) {
-        unsigned const index = (my_index_ + i + 1) % queue_size;
-        if (queues_[index]->TrySteal(task)) {
+    for (unsigned int i = 0; i < queue_size_; ++i) {
+        unsigned const index = (my_index_ + i + 1) % queue_size_;
+        if (queues_[std::min(index, queue_size_.load() - 1)]->TrySteal(task)) {
             return true;
         }
     }
@@ -49,12 +48,10 @@ void ThreadPool::RunPendingTask() {
         task();
         num_jobs_.fetch_sub(1);
     } else {
-      std::this_thread::yield();
-        std::unique_lock<std::mutex> unique_lock(mu_);
         if (num_jobs_.load() == 0){
+          std::unique_lock<std::mutex> unique_lock(mu_);
           cv_.wait(unique_lock);
         } else {
-          unique_lock.unlock();
           std::this_thread::yield();
         }
     }
@@ -71,14 +68,19 @@ bool ThreadPool::StartNewThread(){
     num_threads_++;
     return true;
 }
-//bool ThreadPool::CancelThread() {
-//    *request_signals_.back() = true;
-//    while (threads_.back().joinable()){}
-//    threads_.pop_back();
-//    queues_.pop_back();
-//    request_signals_.pop_back();
-//    num_threads_--;
-//    return true;
-//}
+bool ThreadPool::CancelThread() {
+    *request_signals_.back() = true;
+    while (threads_.back().joinable()){
+      threads_.back().join();
+    }
+    threads_.pop_back();
+    queue_size_.fetch_sub(1);
+    std::unique_ptr<WorkStealingQueue> back = std::move(queues_.back());
+    num_jobs_.fetch_sub(back->Size());
+    queues_.pop_back();
+    request_signals_.pop_back();
+    num_threads_--;
+    return true;
+}
 
 }

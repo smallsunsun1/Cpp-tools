@@ -55,6 +55,7 @@ class ThreadPool {
   }
   void Cancel();
   bool StartNewThread();
+  bool CancelThread();
 //  bool CancelThread() {
 //    std::cout << "Current Dont't Supported Delete Threads In Pool, Use"
 //                 "Cancel To Destroy ThreadPool And Launch Another ThreadPool !"
@@ -74,7 +75,6 @@ class ThreadPool {
       res = std::move(task.get_future());
       if (!pool_work_queue_.Empty()) {
         int indices = dis_(mt_) % queue_size_.load();
-        std::unique_lock<std::mutex> unique_lock(mu_);
         queues_[indices].get()->Push(std::move(task));
       } else {
         pool_work_queue_.Push(std::move(task));
@@ -98,7 +98,7 @@ class ThreadPool {
   static thread_local unsigned my_index_;
   static thread_local bool *request_stop_;
   std::atomic<bool> done_;
-  std::atomic<int> queue_size_;
+  std::atomic<unsigned int> queue_size_;
   std::atomic<int> num_jobs_;
   std::random_device dev_;
   std::uniform_int_distribution<> dis_;

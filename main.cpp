@@ -89,15 +89,15 @@ int main() {
   sss::ThreadPool pool(4);
   std::vector<std::future<void>> fut;
   fut.reserve(100);
-  for (int i = 0; i < 100; ++i) {
+  for (int i = 0; i < 1000; ++i) {
     fut.push_back(pool.Submit(DoLargeCompute, 0));
-    if (i % 40 == 0)
+    if (i % 400 == 0)
       pool.StartNewThread();
   }
+  pool.CancelThread();
   std::cout << pool.NumThreads() << std::endl;
-  int ind = 0;
-
-//  std::this_thread::sleep_for(std::chrono::seconds(1));
-
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::cout << "here" << std::endl;
+  std::cout << pool.NumJobs() << std::endl;
   return 0;
 }

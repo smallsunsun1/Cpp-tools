@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <random>
+#include <numeric>
 #include <functional>
 #include <queue>
 #include <thread>
@@ -97,10 +98,12 @@ class WorkStealingThreadPool {
   }
   template<typename F>
   void Submit(F &&f) {
-    unsigned indices = dis_(mt_) % queues_.size();
+    auto iter = std::min_element(queues_.begin(), queues_.end(), [](const std::unique_ptr<Data>& a, const std::unique_ptr<Data>& b){return a->size_ < b->size_;});
+    unsigned indices = std::distance(queues_.begin(), iter);
     {
       std::lock_guard<std::mutex> lock_guard(queues_[indices]->mu_);
       queues_[indices]->tasks_.emplace_back(f);
+      queues_[indices]->size_.fetch_add(1);
     }
     num_jobs_.fetch_add(1);
   }
@@ -114,7 +117,8 @@ class WorkStealingThreadPool {
   bool PopTaskFromOtherThreadQueue(Task &task);
   struct Data {
     std::mutex mu_;
-    std::condition_variable cv_;
+    std::atomic<unsigned> size_ = 0;
+//    std::condition_variable cv_;
     bool is_shutdown_ = false;
     std::deque<Task> tasks_;
   };

@@ -16,6 +16,7 @@ bool WorkStealingThreadPool::PopTaskFromLocalQueue(WorkStealingThreadPool::Task 
       return false;
     task = local_queue_->tasks_.front();
     local_queue_->tasks_.pop_front();
+    queues_[index_]->size_.fetch_sub(1);
     return true;
   }
 }
@@ -27,6 +28,7 @@ bool WorkStealingThreadPool::PopTaskFromOtherThreadQueue(WorkStealingThreadPool:
     if (!queues_[index]->tasks_.empty()){
       task = queues_[index]->tasks_.front();
       queues_[index]->tasks_.pop_front();
+      queues_[index]->size_.fetch_sub(1);
       return true;
     }
   }
@@ -35,10 +37,14 @@ bool WorkStealingThreadPool::PopTaskFromOtherThreadQueue(WorkStealingThreadPool:
 
 void WorkStealingThreadPool::RunTask() {
   Task task;
-  if (PopTaskFromLocalQueue(task) || PopTaskFromOtherThreadQueue(task)) {
+  if (PopTaskFromLocalQueue(task)) {
     task();
     num_jobs_.fetch_sub(1);
-  } else{
+  } else if (PopTaskFromOtherThreadQueue(task)) {
+    task();
+    num_jobs_.fetch_sub(1);
+  }
+  else{
     std::this_thread::yield();
   }
 }
